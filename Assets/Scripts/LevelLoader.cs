@@ -40,25 +40,52 @@ public class LevelLoader : MonoBehaviour
     [Tooltip("Parent object for all monsters (optional)")]
     public Transform monstersParent;
     
+    [Header("Weapon Settings")]
+    [Tooltip("Weapon prefab or GameObject to instantiate (drag Weapon from scene or use prefab)")]
+    public GameObject weaponPrefab;
+    
+    [Tooltip("Scale of weapon objects")]
+    public Vector3 weaponScale = Vector3.one;
+    
+    [Tooltip("Parent object for all weapons (optional)")]
+    public Transform weaponsParent;
+    
     private List<GameObject> wallObjects = new List<GameObject>();
     private List<GameObject> monsterObjects = new List<GameObject>();
+    private List<GameObject> weaponObjects = new List<GameObject>();
     
     void Start()
     {
         LoadLevel(levelIndex);
+        
+        // Sync with GameManager if it exists
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.SetLevel(levelIndex);
+        }
     }
     
     public void LoadLevel(int index)
     {
-        // Clear existing walls and monsters
+        // Clear existing walls, monsters, and weapons
         ClearWalls();
         ClearMonsters();
+        ClearWeapons();
         
         // Validate level index
         if (index < 0 || index >= Levels.All.Count)
         {
             Debug.LogWarning($"Level index {index} is out of range. Available levels: 0-{Levels.All.Count - 1}");
             return;
+        }
+        
+        // Update level index
+        levelIndex = index;
+        
+        // Sync with GameManager if it exists
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.SetLevel(levelIndex);
         }
         
         string[] levelData = Levels.All[index];
@@ -105,10 +132,21 @@ public class LevelLoader : MonoBehaviour
                     
                     CreateMonster(position, minX, maxX, minZ, maxZ);
                 }
+                // Create weapon for "w" character
+                else if (cell == 'w')
+                {
+                    Vector3 position = new Vector3(
+                        offsetX + col * cellSize,
+                        weaponScale.y / 2f, // Position at half height so bottom sits on ground
+                        offsetZ - row * cellSize
+                    );
+                    
+                    CreateWeapon(position);
+                }
             }
         }
         
-        Debug.Log($"Loaded level {index + 1} with {wallObjects.Count} walls and {monsterObjects.Count} monsters");
+        Debug.Log($"Loaded level {index + 1} with {wallObjects.Count} walls, {monsterObjects.Count} monsters, and {weaponObjects.Count} weapons");
     }
     
     void CreateWall(Vector3 position)
@@ -225,6 +263,56 @@ public class LevelLoader : MonoBehaviour
         monsterObjects.Add(monster);
     }
     
+    void CreateWeapon(Vector3 position)
+    {
+        // Check if weapon prefab is assigned
+        if (weaponPrefab == null)
+        {
+            // Try to find Weapon GameObject in scene as fallback
+            GameObject sceneWeapon = GameObject.Find("Weapon");
+            if (sceneWeapon != null)
+            {
+                weaponPrefab = sceneWeapon;
+                Debug.Log("Found Weapon GameObject in scene, using it as template.");
+            }
+            else
+            {
+                Debug.LogWarning("Weapon prefab is not assigned in LevelLoader and no 'Weapon' GameObject found in scene. Cannot create weapon.");
+                return;
+            }
+        }
+        
+        // Instantiate weapon from prefab
+        GameObject weapon = Instantiate(weaponPrefab);
+        
+        // Set position and scale
+        weapon.transform.position = position;
+        weapon.transform.localScale = weaponScale;
+        
+        // Set name
+        weapon.name = $"Weapon_{weaponObjects.Count}";
+        
+        // Add to parent if specified, otherwise create a default parent
+        if (weaponsParent == null)
+        {
+            // Create a parent if it doesn't exist
+            Transform existingParent = transform.Find("Weapons");
+            if (existingParent == null)
+            {
+                GameObject weaponsContainer = new GameObject("Weapons");
+                weaponsContainer.transform.SetParent(transform);
+                weaponsParent = weaponsContainer.transform;
+            }
+            else
+            {
+                weaponsParent = existingParent;
+            }
+        }
+        weapon.transform.SetParent(weaponsParent);
+        
+        weaponObjects.Add(weapon);
+    }
+    
     void ClearWalls()
     {
         foreach (GameObject wall in wallObjects)
@@ -249,10 +337,23 @@ public class LevelLoader : MonoBehaviour
         monsterObjects.Clear();
     }
     
+    void ClearWeapons()
+    {
+        foreach (GameObject weapon in weaponObjects)
+        {
+            if (weapon != null)
+            {
+                DestroyImmediate(weapon);
+            }
+        }
+        weaponObjects.Clear();
+    }
+    
     void OnDestroy()
     {
         ClearWalls();
         ClearMonsters();
+        ClearWeapons();
     }
 }
 
