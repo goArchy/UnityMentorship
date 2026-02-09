@@ -50,9 +50,20 @@ public class LevelLoader : MonoBehaviour
     [Tooltip("Parent object for all weapons (optional)")]
     public Transform weaponsParent;
     
+    [Header("Ground Plane Settings")]
+    [Tooltip("The ground plane Transform to resize per level (drag the Plane from scene)")]
+    public Transform groundPlane;
+    
+    [Tooltip("Extra margin around the level grid for the ground plane and boundaries")]
+    public float groundMargin = 1f;
+    
+    [Tooltip("Height of the invisible boundary walls")]
+    public float boundaryWallHeight = 4f;
+    
     private List<GameObject> wallObjects = new List<GameObject>();
     private List<GameObject> monsterObjects = new List<GameObject>();
     private List<GameObject> weaponObjects = new List<GameObject>();
+    private List<GameObject> boundaryObjects = new List<GameObject>();
     
     void Start()
     {
@@ -62,15 +73,19 @@ public class LevelLoader : MonoBehaviour
         if (GameManager.Instance != null)
         {
             GameManager.Instance.SetLevel(levelIndex);
+            
+            // Subscribe to proceed event to load next level after player presses a key
+            GameManager.Instance.OnProceedToNextLevel += OnProceedToNextLevel;
         }
     }
     
     public void LoadLevel(int index)
     {
-        // Clear existing walls, monsters, and weapons
+        // Clear existing walls, monsters, weapons, and boundaries
         ClearWalls();
         ClearMonsters();
         ClearWeapons();
+        ClearBoundaries();
         
         // Validate level index
         if (index < 0 || index >= Levels.All.Count)
@@ -86,6 +101,9 @@ public class LevelLoader : MonoBehaviour
         if (GameManager.Instance != null)
         {
             GameManager.Instance.SetLevel(levelIndex);
+            
+            // Reset weapon state at the start of each level attempt
+            GameManager.Instance.ResetWeapon();
         }
         
         string[] levelData = Levels.All[index];
@@ -101,6 +119,12 @@ public class LevelLoader : MonoBehaviour
         float maxX = offsetX + (cols - 1) * cellSize;
         float minZ = offsetZ - (rows - 1) * cellSize;
         float maxZ = offsetZ;
+        
+        // Resize the ground plane to fit the level grid
+        ResizeGroundPlane(cols, rows);
+        
+        // Create invisible boundary walls around the level perimeter
+        CreateBoundaries(minX, maxX, minZ, maxZ);
         
         // Parse level data and create walls and monsters
         for (int row = 0; row < rows; row++)
@@ -349,11 +373,140 @@ public class LevelLoader : MonoBehaviour
         weaponObjects.Clear();
     }
     
+    /// <summary>
+    /// Resizes the ground plane to fit the level grid dimensions plus margin.
+    /// Unity's default Plane mesh is 10x10 units, so localScale = worldSize / 10.
+    /// </summary>
+    void ResizeGroundPlane(int cols, int rows)
+    {
+        if (groundPlane == null)
+        {
+            Debug.LogWarning("Ground plane is not assigned in LevelLoader. Cannot resize.");
+            return;
+        }
+        
+        float worldWidth = cols * cellSize + groundMargin * 2f;
+        float worldDepth = rows * cellSize + groundMargin * 2f;
+        
+        groundPlane.localScale = new Vector3(worldWidth / 10f, 1f, worldDepth / 10f);
+        groundPlane.position = new Vector3(0f, groundPlane.position.y, 0f);
+    }
+    
+    /// <summary>
+    /// Creates 4 invisible boundary walls around the level perimeter.
+    /// Each wall is a thin BoxCollider with no renderer.
+    /// </summary>
+    void CreateBoundaries(float minX, float maxX, float minZ, float maxZ)
+    {
+        ClearBoundaries();
+        
+        float halfMargin = groundMargin / 2f;
+        float levelWidth = maxX - minX + cellSize;   // full grid width in world units
+        float levelDepth = maxZ - minZ + cellSize;   // full grid depth in world units
+        float centerX = (minX + maxX) / 2f;
+        float centerZ = (minZ + maxZ) / 2f;
+        float wallThickness = 0.5f;
+        float wallY = boundaryWallHeight / 2f;
+        
+        // Boundary extends to cover the grid + margin
+        float totalWidth = levelWidth + groundMargin * 2f;
+        float totalDepth = levelDepth + groundMargin * 2f;
+        
+        // North wall (positive Z edge)
+        CreateBoundaryWall(
+            $"Boundary_North",
+            new Vector3(centerX, wallY, maxZ + cellSize / 2f + halfMargin),
+            new Vector3(totalWidth, boundaryWallHeight, wallThickness)
+        );
+        
+        // South wall (negative Z edge)
+        CreateBoundaryWall(
+            $"Boundary_South",
+            new Vector3(centerX, wallY, minZ - cellSize / 2f - halfMargin),
+            new Vector3(totalWidth, boundaryWallHeight, wallThickness)
+        );
+        
+        // East wall (positive X edge)
+        CreateBoundaryWall(
+            $"Boundary_East",
+            new Vector3(maxX + cellSize / 2f + halfMargin, wallY, centerZ),
+            new Vector3(wallThickness, boundaryWallHeight, totalDepth)
+        );
+        
+        // West wall (negative X edge)
+        CreateBoundaryWall(
+            $"Boundary_West",
+            new Vector3(minX - cellSize / 2f - halfMargin, wallY, centerZ),
+            new Vector3(wallThickness, boundaryWallHeight, totalDepth)
+        );
+    }
+    
+    /// <summary>
+    /// Creates a single invisible boundary wall with a BoxCollider.
+    /// </summary>
+    void CreateBoundaryWall(string name, Vector3 position, Vector3 size)
+    {
+        GameObject boundary = new GameObject(name);
+        boundary.transform.position = position;
+        
+        BoxCollider collider = boundary.AddComponent<BoxCollider>();
+        collider.size = size;
+        collider.isTrigger = false;
+        
+        // Parent under a Boundaries container
+        Transform boundariesParent = transform.Find("Boundaries");
+        if (boundariesParent == null)
+        {
+            GameObject container = new GameObject("Boundaries");
+            container.transform.SetParent(transform);
+            boundariesParent = container.transform;
+        }
+        boundary.transform.SetParent(boundariesParent);
+        
+        boundaryObjects.Add(boundary);
+    }
+    
+    /// <summary>
+    /// Destroys all boundary wall objects.
+    /// </summary>
+    void ClearBoundaries()
+    {
+        foreach (GameObject boundary in boundaryObjects)
+        {
+            if (boundary != null)
+            {
+                DestroyImmediate(boundary);
+            }
+        }
+        boundaryObjects.Clear();
+    }
+    
+    /// <summary>
+    /// Called when the player presses a key after level complete.
+    /// Clears all dynamically generated objects from the previous level, then loads the next.
+    /// </summary>
+    private void OnProceedToNextLevel()
+    {
+        if (GameManager.Instance != null)
+        {
+            int nextLevel = GameManager.Instance.GetCurrentLevel();
+            Debug.Log($"Clearing previous level and loading level: {nextLevel + 1}");
+            LoadLevel(nextLevel);
+        }
+    }
+    
     void OnDestroy()
     {
         ClearWalls();
         ClearMonsters();
         ClearWeapons();
+        ClearBoundaries();
+        
+        // Unsubscribe from events
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.OnProceedToNextLevel -= OnProceedToNextLevel;
+        }
     }
 }
 
