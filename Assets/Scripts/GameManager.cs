@@ -24,11 +24,16 @@ public class GameManager : MonoBehaviour
     
     private int currentLives;
     private bool isGameOver = false;
+    private bool hasWeapon = false;
+    private bool isLevelComplete = false;
     
     // Events for HUD updates
     public System.Action<int> OnLivesChanged;
     public System.Action<int> OnLevelChanged;
+    public System.Action<bool> OnWeaponChanged;
     public System.Action OnGameOver;
+    public System.Action OnLevelComplete;
+    public System.Action OnProceedToNextLevel;
     
     void Awake()
     {
@@ -53,6 +58,15 @@ public class GameManager : MonoBehaviour
         // Notify HUD of initial values
         OnLivesChanged?.Invoke(currentLives);
         OnLevelChanged?.Invoke(currentLevel);
+    }
+    
+    void Update()
+    {
+        // Wait for any key press to proceed after level complete
+        if (isLevelComplete && Input.anyKeyDown)
+        {
+            ProceedToNextLevel();
+        }
     }
     
     /// <summary>
@@ -100,6 +114,80 @@ public class GameManager : MonoBehaviour
     }
     
     /// <summary>
+    /// Gets whether the player currently has a weapon.
+    /// </summary>
+    public bool HasWeapon()
+    {
+        return hasWeapon;
+    }
+    
+    /// <summary>
+    /// Called when the player picks up a weapon.
+    /// </summary>
+    public void PickUpWeapon()
+    {
+        hasWeapon = true;
+        OnWeaponChanged?.Invoke(hasWeapon);
+        Debug.Log("Player picked up a weapon!");
+    }
+    
+    /// <summary>
+    /// Resets the weapon state to false (called at start of each level attempt).
+    /// </summary>
+    public void ResetWeapon()
+    {
+        hasWeapon = false;
+        OnWeaponChanged?.Invoke(hasWeapon);
+    }
+    
+    /// <summary>
+    /// Called when the player defeats a monster with a weapon, completing the level.
+    /// Freezes the game and waits for a key press before loading the next level.
+    /// </summary>
+    public void CompleteLevel()
+    {
+        if (isGameOver || isLevelComplete) return;
+        
+        isLevelComplete = true;
+        Debug.Log($"Level {currentLevel + 1} complete! Press any key to continue...");
+        
+        // Freeze the game (stops physics and Time.deltaTime-based movement)
+        Time.timeScale = 0f;
+        
+        // Notify UI to show "Level Complete!" message
+        OnLevelComplete?.Invoke();
+    }
+    
+    /// <summary>
+    /// Called when the player presses a key after level complete.
+    /// Unfreezes the game, clears the level, and loads the next one.
+    /// </summary>
+    private void ProceedToNextLevel()
+    {
+        isLevelComplete = false;
+        
+        // Unfreeze the game
+        Time.timeScale = 1f;
+        
+        // Reset weapon for next level
+        ResetWeapon();
+        
+        // Advance to the next level
+        NextLevel();
+        
+        // Notify LevelLoader to clear previous level and load the next one
+        OnProceedToNextLevel?.Invoke();
+    }
+    
+    /// <summary>
+    /// Checks if the level is currently in the "complete" paused state.
+    /// </summary>
+    public bool IsLevelComplete()
+    {
+        return isLevelComplete;
+    }
+    
+    /// <summary>
     /// Gets the current level index (0-based).
     /// </summary>
     public int GetCurrentLevel()
@@ -143,8 +231,12 @@ public class GameManager : MonoBehaviour
         currentLives = startingLives;
         currentLevel = 0;
         isGameOver = false;
+        hasWeapon = false;
+        isLevelComplete = false;
+        Time.timeScale = 1f;
         OnLivesChanged?.Invoke(currentLives);
         OnLevelChanged?.Invoke(currentLevel);
+        OnWeaponChanged?.Invoke(hasWeapon);
     }
     
     /// <summary>
