@@ -3,9 +3,9 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody))]
 public class PlayerRigidbodyController : MonoBehaviour
 {
-    [SerializeField] float moveSpeed = 6f;
-    [SerializeField] float jumpForce = 5f;
-    [SerializeField] Transform orientation; // optional: used for camera-relative movement
+    public float moveSpeed = 6f;
+    public float jumpForce = 5f;
+    public Transform orientation;
 
     Rigidbody rb;
     Vector3 inputVector;

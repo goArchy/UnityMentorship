@@ -26,6 +26,7 @@ public class GameManager : MonoBehaviour
     private bool isGameOver = false;
     private bool hasWeapon = false;
     private bool isLevelComplete = false;
+    private float monsterSpeedMultiplier = 1f;
     
     // Events for HUD updates
     public System.Action<int> OnLivesChanged;
@@ -221,6 +222,11 @@ public class GameManager : MonoBehaviour
         {
             SetLevel(currentLevel + 1);
         }
+        else
+        {
+            monsterSpeedMultiplier *= 1.5f;
+            SetLevel(0);
+        }
     }
     
     /// <summary>
@@ -233,6 +239,7 @@ public class GameManager : MonoBehaviour
         isGameOver = false;
         hasWeapon = false;
         isLevelComplete = false;
+        monsterSpeedMultiplier = 1f;
         Time.timeScale = 1f;
         OnLivesChanged?.Invoke(currentLives);
         OnLevelChanged?.Invoke(currentLevel);
@@ -291,5 +298,10 @@ public class GameManager : MonoBehaviour
     public string GetLandingSceneName()
     {
         return landingSceneName;
+    }
+    
+    public float GetMonsterSpeedMultiplier()
+    {
+        return monsterSpeedMultiplier;
     }
 }

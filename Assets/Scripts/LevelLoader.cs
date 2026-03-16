@@ -25,7 +25,10 @@ public class LevelLoader : MonoBehaviour
     public Transform wallsParent;
     
     [Header("Monster Settings")]
-    [Tooltip("Scale of monster sphere")]
+    [Tooltip("Monster prefab to instantiate (e.g. FootmanHP). Falls back to sphere if not assigned.")]
+    public GameObject monsterPrefab;
+    
+    [Tooltip("Scale of monster")]
     public Vector3 monsterScale = Vector3.one;
     
     [Tooltip("Movement speed of monsters")]
@@ -50,6 +53,19 @@ public class LevelLoader : MonoBehaviour
     [Tooltip("Parent object for all weapons (optional)")]
     public Transform weaponsParent;
     
+    [Header("Player Settings")]
+    [Tooltip("Player prefab to instantiate (e.g. RPGHeroHP). Falls back to cube if not assigned.")]
+    public GameObject playerPrefab;
+    
+    [Tooltip("Scale of player")]
+    public Vector3 playerScale = Vector3.one;
+    
+    [Tooltip("Movement speed of the player")]
+    public float playerMoveSpeed = 6f;
+    
+    [Tooltip("Jump force of the player")]
+    public float playerJumpForce = 5f;
+    
     [Header("Ground Plane Settings")]
     [Tooltip("The ground plane Transform to resize per level (drag the Plane from scene)")]
     public Transform groundPlane;
@@ -64,6 +80,7 @@ public class LevelLoader : MonoBehaviour
     private List<GameObject> monsterObjects = new List<GameObject>();
     private List<GameObject> weaponObjects = new List<GameObject>();
     private List<GameObject> boundaryObjects = new List<GameObject>();
+    private GameObject playerInstance;
     
     void Start()
     {
@@ -81,11 +98,12 @@ public class LevelLoader : MonoBehaviour
     
     public void LoadLevel(int index)
     {
-        // Clear existing walls, monsters, weapons, and boundaries
+        // Clear existing walls, monsters, weapons, boundaries, and player
         ClearWalls();
         ClearMonsters();
         ClearWeapons();
         ClearBoundaries();
+        ClearPlayer();
         
         // Validate level index
         if (index < 0 || index >= Levels.All.Count)
@@ -167,6 +185,17 @@ public class LevelLoader : MonoBehaviour
                     
                     CreateWeapon(position);
                 }
+                // Create player for "u" character
+                else if (cell == 'u')
+                {
+                    Vector3 position = new Vector3(
+                        offsetX + col * cellSize,
+                        playerScale.y / 2f,
+                        offsetZ - row * cellSize
+                    );
+                    
+                    CreatePlayer(position);
+                }
             }
         }
         
@@ -226,50 +255,61 @@ public class LevelLoader : MonoBehaviour
     
     void CreateMonster(Vector3 position, float minX, float maxX, float minZ, float maxZ)
     {
-        // Create sphere GameObject
-        GameObject monster = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        GameObject monster;
         
-        // Set position and scale
-        monster.transform.position = position;
-        monster.transform.localScale = monsterScale;
-        
-        // Set name
-        monster.name = $"Monster_{monsterObjects.Count}";
-        
-        // Apply material if provided
-        if (monsterMaterial != null)
+        if (monsterPrefab != null)
         {
-            Renderer renderer = monster.GetComponent<Renderer>();
-            if (renderer != null)
+            // Instantiate from prefab (carries its own mesh, materials, and animator)
+            monster = Instantiate(monsterPrefab);
+        }
+        else
+        {
+            // Fallback to sphere primitive
+            monster = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            
+            if (monsterMaterial != null)
             {
-                renderer.material = monsterMaterial;
+                Renderer renderer = monster.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.material = monsterMaterial;
+                }
             }
         }
         
+        monster.transform.position = position;
+        monster.transform.localScale = monsterScale;
+        monster.name = $"Monster_{monsterObjects.Count}";
+        
         // Add RandomSphereMovement component
         RandomSphereMovement movement = monster.AddComponent<RandomSphereMovement>();
-        
-        // Configure movement settings
-        movement.moveSpeed = monsterMoveSpeed;
+        float speedMultiplier = GameManager.Instance != null ? GameManager.Instance.GetMonsterSpeedMultiplier() : 1f;
+        movement.moveSpeed = monsterMoveSpeed * speedMultiplier;
         movement.directionChangeInterval = monsterDirectionChangeInterval;
         movement.useBounds = true;
         movement.minX = minX;
         movement.maxX = maxX;
         movement.minZ = minZ;
         movement.maxZ = maxZ;
-        movement.canSpawnOnCollision = false; // Disable spawning for monsters
+        movement.canSpawnOnCollision = false;
         
-        // Ensure the monster has a collider (CreatePrimitive already adds one, but make sure it's not a trigger)
-        Collider collider = monster.GetComponent<Collider>();
-        if (collider != null)
+        // Ensure the monster has a collider for collision detection
+        if (monster.GetComponentInChildren<Collider>() == null)
         {
-            collider.isTrigger = false;
+            CapsuleCollider capsule = monster.AddComponent<CapsuleCollider>();
+            capsule.isTrigger = false;
+        }
+        else
+        {
+            foreach (Collider col in monster.GetComponentsInChildren<Collider>())
+            {
+                col.isTrigger = false;
+            }
         }
         
         // Add to parent if specified, otherwise create a default parent
         if (monstersParent == null)
         {
-            // Create a parent if it doesn't exist
             Transform existingParent = transform.Find("Monsters");
             if (existingParent == null)
             {
@@ -335,6 +375,90 @@ public class LevelLoader : MonoBehaviour
         weapon.transform.SetParent(weaponsParent);
         
         weaponObjects.Add(weapon);
+    }
+    
+    void CreatePlayer(Vector3 position)
+    {
+        // Clear any existing player before creating a new one
+        ClearPlayer();
+        
+        GameObject player;
+        
+        if (playerPrefab != null)
+        {
+            player = Instantiate(playerPrefab);
+        }
+        else
+        {
+            // Fallback to cube primitive
+            player = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        }
+        
+        player.transform.position = position;
+        player.transform.localScale = playerScale;
+        player.name = "Player";
+        
+        // Add Rigidbody if not already present
+        Rigidbody rb = player.GetComponent<Rigidbody>();
+        if (rb == null)
+        {
+            rb = player.AddComponent<Rigidbody>();
+        }
+        rb.constraints = RigidbodyConstraints.FreezeRotation;
+        
+        // Add collider if not present anywhere in hierarchy
+        if (player.GetComponentInChildren<Collider>() == null)
+        {
+            CapsuleCollider capsule = player.AddComponent<CapsuleCollider>();
+            capsule.isTrigger = false;
+        }
+        else
+        {
+            foreach (Collider col in player.GetComponentsInChildren<Collider>())
+            {
+                col.isTrigger = false;
+            }
+        }
+        
+        // Add movement controller
+        PlayerRigidbodyController controller = player.GetComponent<PlayerRigidbodyController>();
+        if (controller == null)
+        {
+            controller = player.AddComponent<PlayerRigidbodyController>();
+        }
+        controller.moveSpeed = playerMoveSpeed;
+        controller.jumpForce = playerJumpForce;
+        
+        // Add collision handler
+        if (player.GetComponent<PlayerCollisionHandler>() == null)
+        {
+            player.AddComponent<PlayerCollisionHandler>();
+        }
+        
+        // Wire the camera to follow the new player
+        CameraController cam = FindObjectOfType<CameraController>();
+        if (cam != null)
+        {
+            cam.target = player.transform;
+        }
+        
+        // Wire the orientation for camera-relative movement
+        Camera mainCam = Camera.main;
+        if (mainCam != null)
+        {
+            controller.orientation = mainCam.transform;
+        }
+        
+        playerInstance = player;
+    }
+    
+    void ClearPlayer()
+    {
+        if (playerInstance != null)
+        {
+            DestroyImmediate(playerInstance);
+            playerInstance = null;
+        }
     }
     
     void ClearWalls()
@@ -501,6 +625,7 @@ public class LevelLoader : MonoBehaviour
         ClearMonsters();
         ClearWeapons();
         ClearBoundaries();
+        ClearPlayer();
         
         // Unsubscribe from events
         if (GameManager.Instance != null)
