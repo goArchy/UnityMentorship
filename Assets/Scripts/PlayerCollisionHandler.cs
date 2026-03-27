@@ -160,4 +160,13 @@ public class PlayerCollisionHandler : MonoBehaviour
     {
         return isInvincible;
     }
+
+    /// <summary>
+    /// Starts invincibility after falling in a hole (life already deducted by HoleTrigger).
+    /// </summary>
+    public void BeginInvincibilityAfterHole()
+    {
+        isInvincible = true;
+        invincibilityTimer = invincibilityDuration;
+    }
 }

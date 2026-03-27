@@ -2013,7 +2013,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 224d98bb65a25449f97b760edc776aa3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  levelIndex: 8
+  levelIndex: 7
   cellSize: 1
   useCubes: 1
   wallScale: {x: 1, y: 1, z: 1}
@@ -2032,6 +2032,12 @@ MonoBehaviour:
   playerScale: {x: 0.5, y: 0.5, z: 0.5}
   playerMoveSpeed: 6
   playerJumpForce: 0
+  holeScale: {x: 1, y: 1, z: 1}
+  holeMaterial: {fileID: 0}
+  holesParent: {fileID: 0}
+  kittyScale: {x: 1, y: 1, z: 1}
+  kittyMaterial: {fileID: 0}
+  kittiesParent: {fileID: 0}
   groundPlane: {fileID: 217420391}
   groundMargin: 0.2
   boundaryWallHeight: 4

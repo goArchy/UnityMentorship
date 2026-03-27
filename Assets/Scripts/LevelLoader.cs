@@ -66,6 +66,26 @@ public class LevelLoader : MonoBehaviour
     [Tooltip("Jump force of the player")]
     public float playerJumpForce = 5f;
     
+    [Header("Hole Settings")]
+    [Tooltip("Scale of hole visuals and triggers (per axis, multiplied by cell size on X/Z)")]
+    public Vector3 holeScale = Vector3.one;
+    
+    [Tooltip("Material for hole quads (optional)")]
+    public Material holeMaterial;
+    
+    [Tooltip("Parent object for all holes (optional)")]
+    public Transform holesParent;
+    
+    [Header("Kitty Settings")]
+    [Tooltip("Scale of kitty spheres")]
+    public Vector3 kittyScale = Vector3.one;
+    
+    [Tooltip("Material for kitties (optional)")]
+    public Material kittyMaterial;
+    
+    [Tooltip("Parent object for all kitties (optional)")]
+    public Transform kittiesParent;
+    
     [Header("Ground Plane Settings")]
     [Tooltip("The ground plane Transform to resize per level (drag the Plane from scene)")]
     public Transform groundPlane;
@@ -80,7 +100,10 @@ public class LevelLoader : MonoBehaviour
     private List<GameObject> monsterObjects = new List<GameObject>();
     private List<GameObject> weaponObjects = new List<GameObject>();
     private List<GameObject> boundaryObjects = new List<GameObject>();
+    private List<GameObject> holeObjects = new List<GameObject>();
+    private List<GameObject> kittyObjects = new List<GameObject>();
     private GameObject playerInstance;
+    private Vector3 playerSpawnPosition;
     
     void Start()
     {
@@ -103,6 +126,8 @@ public class LevelLoader : MonoBehaviour
         ClearMonsters();
         ClearWeapons();
         ClearBoundaries();
+        ClearHoles();
+        ClearKitties();
         ClearPlayer();
         
         // Validate level index
@@ -185,6 +210,28 @@ public class LevelLoader : MonoBehaviour
                     
                     CreateWeapon(position);
                 }
+                // Create hole for "*" character
+                else if (cell == '*')
+                {
+                    Vector3 position = new Vector3(
+                        offsetX + col * cellSize,
+                        0f,
+                        offsetZ - row * cellSize
+                    );
+                    
+                    CreateHole(position);
+                }
+                // Create kitty for "k" character
+                else if (cell == 'k')
+                {
+                    Vector3 position = new Vector3(
+                        offsetX + col * cellSize,
+                        kittyScale.y / 2f,
+                        offsetZ - row * cellSize
+                    );
+                    
+                    CreateKitty(position);
+                }
                 // Create player for "u" character
                 else if (cell == 'u')
                 {
@@ -199,7 +246,33 @@ public class LevelLoader : MonoBehaviour
             }
         }
         
-        Debug.Log($"Loaded level {index + 1} with {wallObjects.Count} walls, {monsterObjects.Count} monsters, and {weaponObjects.Count} weapons");
+        // Monsters must avoid hole cells (triggers are ignored by SphereCast)
+        List<Vector3> holeWorldPositions = new List<Vector3>(holeObjects.Count);
+        foreach (GameObject hole in holeObjects)
+        {
+            if (hole != null)
+            {
+                holeWorldPositions.Add(hole.transform.position);
+            }
+        }
+        
+        float monsterHoleAvoidRadius = cellSize * 0.5f;
+        foreach (GameObject monster in monsterObjects)
+        {
+            if (monster == null)
+            {
+                continue;
+            }
+            
+            RandomSphereMovement movement = monster.GetComponent<RandomSphereMovement>();
+            if (movement != null)
+            {
+                movement.avoidPositions = new List<Vector3>(holeWorldPositions);
+                movement.avoidRadius = monsterHoleAvoidRadius;
+            }
+        }
+        
+        Debug.Log($"Loaded level {index + 1} with {wallObjects.Count} walls, {monsterObjects.Count} monsters, {weaponObjects.Count} weapons, {holeObjects.Count} holes, and {kittyObjects.Count} kitties");
     }
     
     void CreateWall(Vector3 position)
@@ -377,10 +450,132 @@ public class LevelLoader : MonoBehaviour
         weaponObjects.Add(weapon);
     }
     
+    /// <summary>
+    /// World position where the player spawns for the current level (for hole respawn).
+    /// </summary>
+    public Vector3 GetPlayerSpawnPosition()
+    {
+        return playerSpawnPosition;
+    }
+    
+    void CreateHole(Vector3 gridPosition)
+    {
+        GameObject hole = new GameObject($"Hole_{holeObjects.Count}");
+        hole.transform.position = new Vector3(gridPosition.x, 0f, gridPosition.z);
+        
+        GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        Collider quadCollider = quad.GetComponent<Collider>();
+        if (quadCollider != null)
+        {
+            Destroy(quadCollider);
+        }
+        
+        quad.transform.SetParent(hole.transform, false);
+        quad.transform.localPosition = new Vector3(0f, 0.01f, 0f);
+        quad.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        quad.transform.localScale = new Vector3(
+            cellSize * holeScale.x,
+            cellSize * holeScale.y,
+            1f
+        );
+        
+        if (holeMaterial != null)
+        {
+            Renderer renderer = quad.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                renderer.material = holeMaterial;
+            }
+        }
+        
+        BoxCollider box = hole.AddComponent<BoxCollider>();
+        box.isTrigger = true;
+        box.center = new Vector3(0f, 0.6f, 0f);
+        box.size = new Vector3(
+            cellSize * holeScale.x * 0.95f,
+            1.2f,
+            cellSize * holeScale.z * 0.95f
+        );
+        
+        HoleTrigger holeTrigger = hole.AddComponent<HoleTrigger>();
+        holeTrigger.levelLoader = this;
+        
+        if (holesParent == null)
+        {
+            Transform existingParent = transform.Find("Holes");
+            if (existingParent == null)
+            {
+                GameObject holesContainer = new GameObject("Holes");
+                holesContainer.transform.SetParent(transform);
+                holesParent = holesContainer.transform;
+            }
+            else
+            {
+                holesParent = existingParent;
+            }
+        }
+        hole.transform.SetParent(holesParent);
+        
+        holeObjects.Add(hole);
+    }
+    
+    void CreateKitty(Vector3 position)
+    {
+        GameObject kitty = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        kitty.transform.position = position;
+        kitty.transform.localScale = kittyScale;
+        kitty.name = $"Kitty_{kittyObjects.Count}";
+        
+        if (kittyMaterial != null)
+        {
+            Renderer renderer = kitty.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                renderer.material = kittyMaterial;
+            }
+        }
+        
+        Collider col = kitty.GetComponent<Collider>();
+        if (col != null)
+        {
+            col.isTrigger = false;
+        }
+
+        // Kinematic Rigidbody so OnCollisionEnter fires vs kinematic monsters (static collider alone does not)
+        Rigidbody kittyRb = kitty.AddComponent<Rigidbody>();
+        kittyRb.isKinematic = true;
+        kittyRb.useGravity = false;
+
+        if (kitty.GetComponent<KittyCollisionHandler>() == null)
+        {
+            kitty.AddComponent<KittyCollisionHandler>();
+        }
+        
+        if (kittiesParent == null)
+        {
+            Transform existingParent = transform.Find("Kitties");
+            if (existingParent == null)
+            {
+                GameObject kittiesContainer = new GameObject("Kitties");
+                kittiesContainer.transform.SetParent(transform);
+                kittiesParent = kittiesContainer.transform;
+            }
+            else
+            {
+                kittiesParent = existingParent;
+            }
+        }
+        kitty.transform.SetParent(kittiesParent);
+        
+        kittyObjects.Add(kitty);
+    }
+    
     void CreatePlayer(Vector3 position)
     {
         // Clear any existing player before creating a new one
         ClearPlayer();
+        
+        playerSpawnPosition = position;
         
         GameObject player;
         
@@ -442,13 +637,6 @@ public class LevelLoader : MonoBehaviour
             cam.target = player.transform;
         }
         
-        // Wire the orientation for camera-relative movement
-        Camera mainCam = Camera.main;
-        if (mainCam != null)
-        {
-            controller.orientation = mainCam.transform;
-        }
-        
         playerInstance = player;
     }
     
@@ -497,6 +685,30 @@ public class LevelLoader : MonoBehaviour
         weaponObjects.Clear();
     }
     
+    void ClearHoles()
+    {
+        foreach (GameObject hole in holeObjects)
+        {
+            if (hole != null)
+            {
+                DestroyImmediate(hole);
+            }
+        }
+        holeObjects.Clear();
+    }
+    
+    void ClearKitties()
+    {
+        foreach (GameObject kitty in kittyObjects)
+        {
+            if (kitty != null)
+            {
+                DestroyImmediate(kitty);
+            }
+        }
+        kittyObjects.Clear();
+    }
+
     /// <summary>
     /// Resizes the ground plane to fit the level grid dimensions plus margin.
     /// Unity's default Plane mesh is 10x10 units, so localScale = worldSize / 10.
@@ -625,6 +837,8 @@ public class LevelLoader : MonoBehaviour
         ClearMonsters();
         ClearWeapons();
         ClearBoundaries();
+        ClearHoles();
+        ClearKitties();
         ClearPlayer();
         
         // Unsubscribe from events

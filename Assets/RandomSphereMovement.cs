@@ -27,6 +27,13 @@ public class RandomSphereMovement : MonoBehaviour
     [Tooltip("Maximum Z position")]
     public float maxZ = 10f;
     
+    [Header("Hole Avoidance")]
+    [Tooltip("World XZ positions of holes; monsters will not enter within avoidRadius + collider radius")]
+    public List<Vector3> avoidPositions = new List<Vector3>();
+    
+    [Tooltip("Extra clearance from hole center on XZ (added to sphere radius)")]
+    public float avoidRadius = 0.5f;
+    
     [Header("Spawning Settings")]
     [Tooltip("If enabled, sphere will spawn a new sphere on collision")]
     public bool canSpawnOnCollision = true;
@@ -170,13 +177,53 @@ public class RandomSphereMovement : MonoBehaviour
             }
             else
             {
-                // No collision, move the full step
+                Vector3 candidatePos = currentPos + stepMovement;
+                if (IsNearHole(candidatePos))
+                {
+                    ChangeDirection();
+                    timeSinceLastDirectionChange = 0f;
+                    break;
+                }
+                
+                // No wall or hole, move the full step
                 currentPos += stepMovement;
                 remainingDistance -= stepDistance;
             }
         }
         
         return currentPos;
+    }
+    
+    /// <summary>
+    /// Walls and kitties block after contact (bounce). Kitties are NOT included in SphereCast so monsters can reach them and trigger kitty penalties.
+    /// </summary>
+    bool IsObstacleCollisionResponse(GameObject go)
+    {
+        if (go == null)
+        {
+            return false;
+        }
+        
+        return go.name.Contains("Wall") || go.name.Contains("Kitty") || go.CompareTag("Wall");
+    }
+    
+    bool IsNearHole(Vector3 position)
+    {
+        if (avoidPositions == null || avoidPositions.Count == 0)
+            return false;
+        
+        float checkRadius = avoidRadius + GetSphereRadius();
+        float r2 = checkRadius * checkRadius;
+        
+        foreach (Vector3 holePos in avoidPositions)
+        {
+            float dx = position.x - holePos.x;
+            float dz = position.z - holePos.z;
+            if (dx * dx + dz * dz < r2)
+                return true;
+        }
+        
+        return false;
     }
     
     float CheckWallCollision(Vector3 fromPosition, Vector3 direction, float maxDistance)
@@ -270,8 +317,8 @@ public class RandomSphereMovement : MonoBehaviour
         
         foreach (Collider col in overlappingColliders)
         {
-            // Check if we're overlapping with a wall
-            if (col.gameObject.name.Contains("Wall") || col.gameObject.CompareTag("Wall"))
+            // Check if we're overlapping with a wall or kitty
+            if (IsObstacleCollisionResponse(col.gameObject))
             {
                 // Calculate push-back direction and distance
                 Vector3 directionToWall = (rb.position - col.bounds.center);
@@ -313,8 +360,8 @@ public class RandomSphereMovement : MonoBehaviour
     
     void OnCollisionEnter(Collision collision)
     {
-        // Check if we hit a wall
-        if (collision.gameObject.name.Contains("Wall") || collision.gameObject.CompareTag("Wall"))
+        // Wall or kitty: bounce (kitty must use collision path, not SphereCast, so OnCollisionEnter fires on kitty)
+        if (IsObstacleCollisionResponse(collision.gameObject))
         {
             // Push the sphere back to prevent penetration
             CorrectPenetration(collision);
@@ -332,8 +379,8 @@ public class RandomSphereMovement : MonoBehaviour
     
     void OnCollisionStay(Collision collision)
     {
-        // Keep pushing back if still in contact with a wall
-        if (collision.gameObject.name.Contains("Wall") || collision.gameObject.CompareTag("Wall"))
+        // Keep pushing back if still in contact with a wall or kitty
+        if (IsObstacleCollisionResponse(collision.gameObject))
         {
             // Continuously correct penetration until resolved
             CorrectPenetration(collision);
@@ -446,6 +493,10 @@ public class RandomSphereMovement : MonoBehaviour
         newMovement.maxX = this.maxX;
         newMovement.minZ = this.minZ;
         newMovement.maxZ = this.maxZ;
+        newMovement.avoidPositions = this.avoidPositions != null
+            ? new List<Vector3>(this.avoidPositions)
+            : new List<Vector3>();
+        newMovement.avoidRadius = this.avoidRadius;
         newMovement.canSpawnOnCollision = this.canSpawnOnCollision;
         newMovement.spawnCooldown = this.spawnCooldown;
         newMovement.spawnOffset = this.spawnOffset;
