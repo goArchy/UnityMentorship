@@ -2013,7 +2013,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 224d98bb65a25449f97b760edc776aa3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  levelIndex: 7
+  levelIndex: 5
   cellSize: 1
   useCubes: 1
   wallScale: {x: 1, y: 1, z: 1}
@@ -2033,9 +2033,11 @@ MonoBehaviour:
   playerMoveSpeed: 6
   playerJumpForce: 0
   holeScale: {x: 1, y: 1, z: 1}
-  holeMaterial: {fileID: 0}
+  holeMaterial: {fileID: 2100000, guid: 2d8921c2c5deb9449918f9b1473e8b83, type: 2}
   holesParent: {fileID: 0}
-  kittyScale: {x: 1, y: 1, z: 1}
+  kittyPrefab: {fileID: 1526554761915109350, guid: 076879464bd682945aa7cd31ae139a36, type: 3}
+  kittyScale: {x: 3, y: 3, z: 3}
+  kittyColliderRadius: 0.15
   kittyMaterial: {fileID: 0}
   kittiesParent: {fileID: 0}
   groundPlane: {fileID: 217420391}

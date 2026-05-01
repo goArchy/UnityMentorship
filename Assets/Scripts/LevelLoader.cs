@@ -77,8 +77,14 @@ public class LevelLoader : MonoBehaviour
     public Transform holesParent;
     
     [Header("Kitty Settings")]
+    [Tooltip("Kitty prefab to instantiate. Falls back to sphere if not assigned.")]
+    public GameObject kittyPrefab;
+    
     [Tooltip("Scale of kitty spheres")]
     public Vector3 kittyScale = Vector3.one;
+    
+    [Tooltip("Radius when LevelLoader adds a CapsuleCollider (prefab has no collider). Unity default is 0.5.")]
+    public float kittyColliderRadius = 0.15f;
     
     [Tooltip("Material for kitties (optional)")]
     public Material kittyMaterial;
@@ -221,12 +227,12 @@ public class LevelLoader : MonoBehaviour
                     
                     CreateHole(position);
                 }
-                // Create kitty for "k" character
+                // Create kitty for "k" character (Y from grid is ground level; CreateKitty snaps mesh/collider bottom to y=0)
                 else if (cell == 'k')
                 {
                     Vector3 position = new Vector3(
                         offsetX + col * cellSize,
-                        kittyScale.y / 2f,
+                        0f,
                         offsetZ - row * cellSize
                     );
                     
@@ -471,7 +477,7 @@ public class LevelLoader : MonoBehaviour
         }
         
         quad.transform.SetParent(hole.transform, false);
-        quad.transform.localPosition = new Vector3(0f, 0.01f, 0f);
+        quad.transform.localPosition = new Vector3(0f, 0.05f, 0f);
         quad.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
         quad.transform.localScale = new Vector3(
             cellSize * holeScale.x,
@@ -479,12 +485,18 @@ public class LevelLoader : MonoBehaviour
             1f
         );
         
-        if (holeMaterial != null)
+        Renderer quadRenderer = quad.GetComponent<Renderer>();
+        if (quadRenderer != null)
         {
-            Renderer renderer = quad.GetComponent<Renderer>();
-            if (renderer != null)
+            if (holeMaterial != null)
             {
-                renderer.material = holeMaterial;
+                quadRenderer.material = holeMaterial;
+            }
+            else
+            {
+                Material voidMat = new Material(Shader.Find("Unlit/Color"));
+                voidMat.color = Color.black;
+                quadRenderer.material = voidMat;
             }
         }
         
@@ -521,28 +533,51 @@ public class LevelLoader : MonoBehaviour
     
     void CreateKitty(Vector3 position)
     {
-        GameObject kitty = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        GameObject kitty;
+        
+        if (kittyPrefab != null)
+        {
+            kitty = Instantiate(kittyPrefab);
+        }
+        else
+        {
+            kitty = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            
+            if (kittyMaterial != null)
+            {
+                Renderer renderer = kitty.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.material = kittyMaterial;
+                }
+            }
+        }
+        
         kitty.transform.position = position;
         kitty.transform.localScale = kittyScale;
         kitty.name = $"Kitty_{kittyObjects.Count}";
         
-        if (kittyMaterial != null)
+        // Ensure the kitty has a collider for physics and KittyCollisionHandler OverlapSphere context
+        if (kitty.GetComponentInChildren<Collider>() == null)
         {
-            Renderer renderer = kitty.GetComponent<Renderer>();
-            if (renderer != null)
-            {
-                renderer.material = kittyMaterial;
-            }
+            CapsuleCollider capsule = kitty.AddComponent<CapsuleCollider>();
+            capsule.radius = Mathf.Max(0.01f, kittyColliderRadius);
+            capsule.isTrigger = false;
         }
-        
-        Collider col = kitty.GetComponent<Collider>();
-        if (col != null)
+        else
         {
-            col.isTrigger = false;
+            foreach (Collider col in kitty.GetComponentsInChildren<Collider>())
+            {
+                col.isTrigger = false;
+            }
         }
 
         // Kinematic Rigidbody so OnCollisionEnter fires vs kinematic monsters (static collider alone does not)
-        Rigidbody kittyRb = kitty.AddComponent<Rigidbody>();
+        Rigidbody kittyRb = kitty.GetComponent<Rigidbody>();
+        if (kittyRb == null)
+        {
+            kittyRb = kitty.AddComponent<Rigidbody>();
+        }
         kittyRb.isKinematic = true;
         kittyRb.useGravity = false;
 
@@ -567,7 +602,66 @@ public class LevelLoader : MonoBehaviour
         }
         kitty.transform.SetParent(kittiesParent);
         
+        SnapKittyBottomToGround(kitty);
+        
         kittyObjects.Add(kitty);
+    }
+    
+    /// <summary>
+    /// Moves the kitty vertically so the lowest point of renderers (or colliders) rests on y=0.
+    /// Works for prefabs with pivot at feet or center; sphere fallback included.
+    /// </summary>
+    static void SnapKittyBottomToGround(GameObject kitty)
+    {
+        bool hasBounds = false;
+        Bounds worldBounds = default;
+        
+        foreach (Renderer r in kitty.GetComponentsInChildren<Renderer>())
+        {
+            if (!r.enabled)
+            {
+                continue;
+            }
+            
+            if (!hasBounds)
+            {
+                worldBounds = r.bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                worldBounds.Encapsulate(r.bounds);
+            }
+        }
+        
+        if (!hasBounds)
+        {
+            foreach (Collider c in kitty.GetComponentsInChildren<Collider>())
+            {
+                if (!c.enabled)
+                {
+                    continue;
+                }
+                
+                if (!hasBounds)
+                {
+                    worldBounds = c.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    worldBounds.Encapsulate(c.bounds);
+                }
+            }
+        }
+        
+        if (!hasBounds)
+        {
+            return;
+        }
+        
+        float dy = -worldBounds.min.y;
+        kitty.transform.position += new Vector3(0f, dy, 0f);
     }
     
     void CreatePlayer(Vector3 position)
