@@ -67,11 +67,8 @@ public class LevelLoader : MonoBehaviour
     public float playerJumpForce = 5f;
     
     [Header("Hole Settings")]
-    [Tooltip("Scale of hole visuals and triggers (per axis, multiplied by cell size on X/Z)")]
+    [Tooltip("Scale of hole triggers (per axis, multiplied by cell size on X/Z)")]
     public Vector3 holeScale = Vector3.one;
-    
-    [Tooltip("Material for hole quads (optional)")]
-    public Material holeMaterial;
     
     [Tooltip("Parent object for all holes (optional)")]
     public Transform holesParent;
@@ -92,11 +89,14 @@ public class LevelLoader : MonoBehaviour
     [Tooltip("Parent object for all kitties (optional)")]
     public Transform kittiesParent;
     
-    [Header("Ground Plane Settings")]
-    [Tooltip("The ground plane Transform to resize per level (drag the Plane from scene)")]
-    public Transform groundPlane;
+    [Header("Ground Settings")]
+    [Tooltip("Material for the procedurally generated ground mesh")]
+    public Material groundMaterial;
     
-    [Tooltip("Extra margin around the level grid for the ground plane and boundaries")]
+    [Tooltip("Parent object for the ground mesh (optional)")]
+    public Transform groundParent;
+    
+    [Tooltip("Extra margin around the level grid for the ground mesh and boundaries")]
     public float groundMargin = 1f;
     
     [Tooltip("Height of the invisible boundary walls")]
@@ -109,6 +109,7 @@ public class LevelLoader : MonoBehaviour
     private List<GameObject> holeObjects = new List<GameObject>();
     private List<GameObject> kittyObjects = new List<GameObject>();
     private GameObject playerInstance;
+    private GameObject groundInstance;
     private Vector3 playerSpawnPosition;
     
     void Start()
@@ -127,11 +128,12 @@ public class LevelLoader : MonoBehaviour
     
     public void LoadLevel(int index)
     {
-        // Clear existing walls, monsters, weapons, boundaries, and player
+        // Clear existing walls, monsters, weapons, boundaries, ground, holes, and player
         ClearWalls();
         ClearMonsters();
         ClearWeapons();
         ClearBoundaries();
+        ClearGround();
         ClearHoles();
         ClearKitties();
         ClearPlayer();
@@ -169,8 +171,7 @@ public class LevelLoader : MonoBehaviour
         float minZ = offsetZ - (rows - 1) * cellSize;
         float maxZ = offsetZ;
         
-        // Resize the ground plane to fit the level grid
-        ResizeGroundPlane(cols, rows);
+        BuildGround(levelData, offsetX, offsetZ);
         
         // Create invisible boundary walls around the level perimeter
         CreateBoundaries(minX, maxX, minZ, maxZ);
@@ -457,48 +458,29 @@ public class LevelLoader : MonoBehaviour
     }
     
     /// <summary>
-    /// World position where the player spawns for the current level (for hole respawn).
+    /// World position where the player spawns for the current level.
     /// </summary>
     public Vector3 GetPlayerSpawnPosition()
     {
         return playerSpawnPosition;
     }
     
+    /// <summary>
+    /// Reloads the current level from scratch (player, monsters, weapon, and ground reset).
+    /// </summary>
+    public void ReloadCurrentLevel()
+    {
+        int index = levelIndex;
+        if (GameManager.Instance != null)
+            index = GameManager.Instance.GetCurrentLevel();
+        
+        LoadLevel(index);
+    }
+    
     void CreateHole(Vector3 gridPosition)
     {
         GameObject hole = new GameObject($"Hole_{holeObjects.Count}");
         hole.transform.position = new Vector3(gridPosition.x, 0f, gridPosition.z);
-        
-        GameObject quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        Collider quadCollider = quad.GetComponent<Collider>();
-        if (quadCollider != null)
-        {
-            Destroy(quadCollider);
-        }
-        
-        quad.transform.SetParent(hole.transform, false);
-        quad.transform.localPosition = new Vector3(0f, 0.05f, 0f);
-        quad.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-        quad.transform.localScale = new Vector3(
-            cellSize * holeScale.x,
-            cellSize * holeScale.y,
-            1f
-        );
-        
-        Renderer quadRenderer = quad.GetComponent<Renderer>();
-        if (quadRenderer != null)
-        {
-            if (holeMaterial != null)
-            {
-                quadRenderer.material = holeMaterial;
-            }
-            else
-            {
-                Material voidMat = new Material(Shader.Find("Unlit/Color"));
-                voidMat.color = Color.black;
-                quadRenderer.material = voidMat;
-            }
-        }
         
         BoxCollider box = hole.AddComponent<BoxCollider>();
         box.isTrigger = true;
@@ -741,6 +723,13 @@ public class LevelLoader : MonoBehaviour
             DestroyImmediate(playerInstance);
             playerInstance = null;
         }
+        
+        GameObject stray = GameObject.Find("Player");
+        while (stray != null)
+        {
+            DestroyImmediate(stray);
+            stray = GameObject.Find("Player");
+        }
     }
     
     void ClearWalls()
@@ -803,23 +792,67 @@ public class LevelLoader : MonoBehaviour
         kittyObjects.Clear();
     }
 
-    /// <summary>
-    /// Resizes the ground plane to fit the level grid dimensions plus margin.
-    /// Unity's default Plane mesh is 10x10 units, so localScale = worldSize / 10.
-    /// </summary>
-    void ResizeGroundPlane(int cols, int rows)
+    void BuildGround(string[] levelData, float offsetX, float offsetZ)
     {
-        if (groundPlane == null)
+        ClearGround();
+        
+        Mesh mesh = GroundMeshBuilder.Build(
+            levelData,
+            cellSize,
+            offsetX,
+            offsetZ,
+            groundMargin,
+            0f
+        );
+        
+        groundInstance = new GameObject("GroundMesh");
+        
+        if (groundParent == null)
         {
-            Debug.LogWarning("Ground plane is not assigned in LevelLoader. Cannot resize.");
-            return;
+            Transform existingParent = transform.Find("Ground");
+            if (existingParent == null)
+            {
+                GameObject groundContainer = new GameObject("Ground");
+                groundContainer.transform.SetParent(transform);
+                groundParent = groundContainer.transform;
+            }
+            else
+            {
+                groundParent = existingParent;
+            }
+        }
+        groundInstance.transform.SetParent(groundParent);
+        groundInstance.transform.localPosition = Vector3.zero;
+        
+        MeshFilter meshFilter = groundInstance.AddComponent<MeshFilter>();
+        meshFilter.sharedMesh = mesh;
+        
+        MeshRenderer meshRenderer = groundInstance.AddComponent<MeshRenderer>();
+        if (groundMaterial != null)
+        {
+            meshRenderer.material = groundMaterial;
         }
         
-        float worldWidth = cols * cellSize + groundMargin * 2f;
-        float worldDepth = rows * cellSize + groundMargin * 2f;
+        MeshCollider meshCollider = groundInstance.AddComponent<MeshCollider>();
+        meshCollider.sharedMesh = mesh;
+        meshCollider.convex = false;
+    }
+    
+    void ClearGround()
+    {
+        if (groundInstance != null)
+        {
+            DestroyImmediate(groundInstance);
+            groundInstance = null;
+        }
         
-        groundPlane.localScale = new Vector3(worldWidth / 10f, 1f, worldDepth / 10f);
-        groundPlane.position = new Vector3(0f, groundPlane.position.y, 0f);
+        if (groundParent != null)
+        {
+            for (int i = groundParent.childCount - 1; i >= 0; i--)
+            {
+                DestroyImmediate(groundParent.GetChild(i).gameObject);
+            }
+        }
     }
     
     /// <summary>
@@ -931,6 +964,7 @@ public class LevelLoader : MonoBehaviour
         ClearMonsters();
         ClearWeapons();
         ClearBoundaries();
+        ClearGround();
         ClearHoles();
         ClearKitties();
         ClearPlayer();

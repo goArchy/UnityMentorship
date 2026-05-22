@@ -1,13 +1,13 @@
 using UnityEngine;
 
 /// <summary>
-/// When the player is inside a hole trigger and within fall radius of center, they lose a life and respawn.
-/// Uses Enter and Stay so walking from the edge to the center still detects the fall.
+/// When the player is inside a hole trigger and within fall radius of center,
+/// starts the hole-fall sequence (fall, lose a life, pause, retry or game over).
 /// </summary>
 [RequireComponent(typeof(Collider))]
 public class HoleTrigger : MonoBehaviour
 {
-    [Tooltip("LevelLoader that owns spawn position (assigned when the hole is created)")]
+    [Tooltip("LevelLoader that reloads the level after a fall (assigned when the hole is created)")]
     public LevelLoader levelLoader;
 
     [Tooltip("XZ radius from hole center within which the player actually falls")]
@@ -32,6 +32,9 @@ public class HoleTrigger : MonoBehaviour
 
     void HandlePlayerInHole(Collider other)
     {
+        if (GameManager.Instance != null && GameManager.Instance.IsHoleFallSequence())
+            return;
+
         if (GameManager.Instance != null && GameManager.Instance.IsLevelComplete())
             return;
 
@@ -58,20 +61,7 @@ public class HoleTrigger : MonoBehaviour
         if (dx * dx + dz * dz > fallRadius * fallRadius)
             return;
 
-        GameObject playerGo = playerRb.gameObject;
-
         if (GameManager.Instance != null)
-            GameManager.Instance.LoseLife();
-
-        handler.BeginInvincibilityAfterHole();
-
-        if (levelLoader != null)
-        {
-            Vector3 spawn = levelLoader.GetPlayerSpawnPosition();
-            playerRb.velocity = Vector3.zero;
-            playerRb.angularVelocity = Vector3.zero;
-            playerRb.position = spawn;
-            playerGo.transform.position = spawn;
-        }
+            GameManager.Instance.BeginHoleFallSequence(levelLoader);
     }
 }

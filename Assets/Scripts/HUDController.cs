@@ -32,8 +32,19 @@ public class HUDController : MonoBehaviour
     [Tooltip("Message shown when the level is completed")]
     public string levelCompleteMessage = "Level Complete!\nPress any key to continue...";
     
+    [Tooltip("Message shown after falling in a hole when lives remain")]
+    public string holeFallRetryMessage = "You fell!\nPress any key to retry...";
+    
+    [Tooltip("Message shown when the player runs out of lives")]
+    public string gameOverMessage = "Game Over!";
+    
     void Start()
     {
+        // GameOverUI may be on an inactive panel; ensure it subscribes to OnGameOver
+        GameOverUI gameOverUI = FindObjectOfType<GameOverUI>(true);
+        if (gameOverUI != null)
+            gameOverUI.Initialize();
+        
         // Subscribe to GameManager events
         if (GameManager.Instance != null)
         {
@@ -42,6 +53,9 @@ public class HUDController : MonoBehaviour
             GameManager.Instance.OnWeaponChanged += UpdateWeaponDisplay;
             GameManager.Instance.OnLevelComplete += ShowLevelComplete;
             GameManager.Instance.OnProceedToNextLevel += HideLevelComplete;
+            GameManager.Instance.OnHoleFallPause += ShowHoleFallPause;
+            GameManager.Instance.OnHoleFallRetry += HideHoleFallPause;
+            GameManager.Instance.OnGameOver += ShowGameOver;
             
             // Initialize display with current values
             UpdateLivesDisplay(GameManager.Instance.GetLives());
@@ -64,6 +78,9 @@ public class HUDController : MonoBehaviour
             GameManager.Instance.OnWeaponChanged -= UpdateWeaponDisplay;
             GameManager.Instance.OnLevelComplete -= ShowLevelComplete;
             GameManager.Instance.OnProceedToNextLevel -= HideLevelComplete;
+            GameManager.Instance.OnHoleFallPause -= ShowHoleFallPause;
+            GameManager.Instance.OnHoleFallRetry -= HideHoleFallPause;
+            GameManager.Instance.OnGameOver -= ShowGameOver;
         }
     }
     
@@ -95,10 +112,13 @@ public class HUDController : MonoBehaviour
     /// </summary>
     private void UpdateWeaponDisplay(bool hasWeapon)
     {
-        if (statusText != null)
-        {
-            statusText.text = hasWeapon ? weaponArmedText : weaponUnarmedText;
-        }
+        if (statusText == null)
+            return;
+        
+        if (GameManager.Instance != null && GameManager.Instance.IsGameOver())
+            return;
+        
+        statusText.text = hasWeapon ? weaponArmedText : weaponUnarmedText;
     }
     
     /// <summary>
@@ -121,5 +141,23 @@ public class HUDController : MonoBehaviour
         {
             UpdateWeaponDisplay(GameManager.Instance.HasWeapon());
         }
+    }
+    
+    private void ShowHoleFallPause()
+    {
+        if (statusText != null)
+            statusText.text = holeFallRetryMessage;
+    }
+    
+    private void HideHoleFallPause()
+    {
+        if (statusText != null && GameManager.Instance != null)
+            UpdateWeaponDisplay(GameManager.Instance.HasWeapon());
+    }
+    
+    private void ShowGameOver()
+    {
+        if (statusText != null)
+            statusText.text = gameOverMessage;
     }
 }

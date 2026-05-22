@@ -24,29 +24,34 @@ public class GameOverUI : MonoBehaviour
     [Tooltip("Subtitle text (optional)")]
     public string subtitleText = "Returning to start screen...";
     
-    private void Start()
+    private bool isInitialized;
+    
+    void Start()
     {
-        // Hide panel initially
+        Initialize();
+    }
+    
+    /// <summary>
+    /// Subscribes to game events. Safe to call when this component lives on an inactive panel
+    /// (Start does not run until the object is active).
+    /// </summary>
+    public void Initialize()
+    {
+        if (isInitialized)
+            return;
+        
+        isInitialized = true;
+        
         if (gameOverPanel != null)
-        {
             gameOverPanel.SetActive(false);
-        }
         
-        // Subscribe to GameManager events
         if (GameManager.Instance != null)
-        {
             GameManager.Instance.OnGameOver += ShowGameOver;
-        }
         else
-        {
             Debug.LogWarning("GameOverUI: GameManager instance not found. Make sure GameManager exists in the scene.");
-        }
         
-        // Setup return button if provided
         if (returnButton != null)
-        {
             returnButton.onClick.AddListener(ReturnToLandingScene);
-        }
     }
     
     private void OnDestroy()

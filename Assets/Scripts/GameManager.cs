@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -22,11 +23,18 @@ public class GameManager : MonoBehaviour
     [Tooltip("Delay before loading landing scene after game over (in seconds)")]
     public float gameOverDelay = 2f;
     
+    [Tooltip("Seconds the player falls before the hole-fall pause")]
+    public float holeFallDuration = 1f;
+    
     private int currentLives;
     private bool isGameOver = false;
     private bool hasWeapon = false;
     private bool isLevelComplete = false;
+    private bool isHoleFallSequence = false;
+    private bool isAwaitingHoleRetryKey = false;
     private float monsterSpeedMultiplier = 1f;
+    private Coroutine holeFallCoroutine;
+    private LevelLoader pendingHoleRetryLoader;
     
     // Events for HUD updates
     public System.Action<int> OnLivesChanged;
@@ -35,6 +43,8 @@ public class GameManager : MonoBehaviour
     public System.Action OnGameOver;
     public System.Action OnLevelComplete;
     public System.Action OnProceedToNextLevel;
+    public System.Action OnHoleFallPause;
+    public System.Action OnHoleFallRetry;
     
     void Awake()
     {
@@ -63,11 +73,84 @@ public class GameManager : MonoBehaviour
     
     void Update()
     {
+        if (isGameOver)
+            return;
+        
+        if (isAwaitingHoleRetryKey && Input.anyKeyDown)
+        {
+            ResumeAfterHoleFall();
+            return;
+        }
+        
         // Wait for any key press to proceed after level complete
-        if (isLevelComplete && Input.anyKeyDown)
+        if (isLevelComplete && !isHoleFallSequence && Input.anyKeyDown)
         {
             ProceedToNextLevel();
         }
+    }
+    
+    /// <summary>
+    /// True while the player is falling into a hole or waiting to retry after a fall.
+    /// </summary>
+    public bool IsHoleFallSequence()
+    {
+        return isHoleFallSequence;
+    }
+    
+    /// <summary>
+    /// Starts the hole-fall sequence: fall for holeFallDuration, lose a life, pause, then retry or game over.
+    /// </summary>
+    public void BeginHoleFallSequence(LevelLoader levelLoader)
+    {
+        if (isGameOver || isLevelComplete || isHoleFallSequence)
+            return;
+        
+        if (holeFallCoroutine != null)
+            StopCoroutine(holeFallCoroutine);
+        
+        holeFallCoroutine = StartCoroutine(HoleFallSequence(levelLoader));
+    }
+    
+    IEnumerator HoleFallSequence(LevelLoader levelLoader)
+    {
+        isHoleFallSequence = true;
+        pendingHoleRetryLoader = levelLoader;
+        
+        float elapsed = 0f;
+        while (elapsed < holeFallDuration)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        
+        LoseLife();
+        
+        if (isGameOver)
+        {
+            isHoleFallSequence = false;
+            isAwaitingHoleRetryKey = false;
+            pendingHoleRetryLoader = null;
+            holeFallCoroutine = null;
+            yield break;
+        }
+        
+        Time.timeScale = 0f;
+        OnHoleFallPause?.Invoke();
+        isAwaitingHoleRetryKey = true;
+        holeFallCoroutine = null;
+    }
+    
+    void ResumeAfterHoleFall()
+    {
+        isAwaitingHoleRetryKey = false;
+        Time.timeScale = 1f;
+        OnHoleFallRetry?.Invoke();
+        
+        if (pendingHoleRetryLoader != null)
+            pendingHoleRetryLoader.ReloadCurrentLevel();
+        
+        pendingHoleRetryLoader = null;
+        isHoleFallSequence = false;
     }
     
     /// <summary>
@@ -239,8 +322,17 @@ public class GameManager : MonoBehaviour
         isGameOver = false;
         hasWeapon = false;
         isLevelComplete = false;
+        isHoleFallSequence = false;
+        isAwaitingHoleRetryKey = false;
+        pendingHoleRetryLoader = null;
         monsterSpeedMultiplier = 1f;
         Time.timeScale = 1f;
+        
+        if (holeFallCoroutine != null)
+        {
+            StopCoroutine(holeFallCoroutine);
+            holeFallCoroutine = null;
+        }
         OnLivesChanged?.Invoke(currentLives);
         OnLevelChanged?.Invoke(currentLevel);
         OnWeaponChanged?.Invoke(hasWeapon);
@@ -259,7 +351,9 @@ public class GameManager : MonoBehaviour
         isGameOver = true;
         Debug.Log("Game Over! Returning to landing scene...");
         
-        // Notify listeners (e.g., UI)
+        Time.timeScale = 0f;
+        
+        // Notify listeners (e.g., UI) — only when lives reach zero
         OnGameOver?.Invoke();
         
         // Load landing scene after delay
