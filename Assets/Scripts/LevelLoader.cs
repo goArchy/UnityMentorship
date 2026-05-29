@@ -123,6 +123,7 @@ public class LevelLoader : MonoBehaviour
             
             // Subscribe to proceed event to load next level after player presses a key
             GameManager.Instance.OnProceedToNextLevel += OnProceedToNextLevel;
+            GameManager.Instance.OnMonsterDamageResume += ReloadCurrentLevel;
         }
     }
     
@@ -973,6 +974,7 @@ public class LevelLoader : MonoBehaviour
         if (GameManager.Instance != null)
         {
             GameManager.Instance.OnProceedToNextLevel -= OnProceedToNextLevel;
+            GameManager.Instance.OnMonsterDamageResume -= ReloadCurrentLevel;
         }
     }
 }

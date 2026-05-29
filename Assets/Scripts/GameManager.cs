@@ -32,6 +32,7 @@ public class GameManager : MonoBehaviour
     private bool isLevelComplete = false;
     private bool isHoleFallSequence = false;
     private bool isAwaitingHoleRetryKey = false;
+    private bool isDamagePaused = false;
     private float monsterSpeedMultiplier = 1f;
     private Coroutine holeFallCoroutine;
     private LevelLoader pendingHoleRetryLoader;
@@ -45,6 +46,8 @@ public class GameManager : MonoBehaviour
     public System.Action OnProceedToNextLevel;
     public System.Action OnHoleFallPause;
     public System.Action OnHoleFallRetry;
+    public System.Action OnMonsterDamagePause;
+    public System.Action OnMonsterDamageResume;
     
     void Awake()
     {
@@ -76,6 +79,12 @@ public class GameManager : MonoBehaviour
         if (isGameOver)
             return;
         
+        if (isDamagePaused && !isHoleFallSequence && Input.anyKeyDown)
+        {
+            ResumeAfterMonsterDamage();
+            return;
+        }
+        
         if (isAwaitingHoleRetryKey && Input.anyKeyDown)
         {
             ResumeAfterHoleFall();
@@ -98,12 +107,22 @@ public class GameManager : MonoBehaviour
     }
     
     /// <summary>
+    /// True while any damage event is in progress (blocks other damage sources).
+    /// </summary>
+    public bool IsDamagePaused()
+    {
+        return isDamagePaused;
+    }
+    
+    /// <summary>
     /// Starts the hole-fall sequence: fall for holeFallDuration, lose a life, pause, then retry or game over.
     /// </summary>
     public void BeginHoleFallSequence(LevelLoader levelLoader)
     {
-        if (isGameOver || isLevelComplete || isHoleFallSequence)
+        if (isGameOver || isLevelComplete || isHoleFallSequence || isDamagePaused)
             return;
+        
+        isDamagePaused = true;
         
         if (holeFallCoroutine != null)
             StopCoroutine(holeFallCoroutine);
@@ -129,6 +148,7 @@ public class GameManager : MonoBehaviour
         {
             isHoleFallSequence = false;
             isAwaitingHoleRetryKey = false;
+            isDamagePaused = false;
             pendingHoleRetryLoader = null;
             holeFallCoroutine = null;
             yield break;
@@ -143,6 +163,7 @@ public class GameManager : MonoBehaviour
     void ResumeAfterHoleFall()
     {
         isAwaitingHoleRetryKey = false;
+        isDamagePaused = false;
         Time.timeScale = 1f;
         OnHoleFallRetry?.Invoke();
         
@@ -187,6 +208,34 @@ public class GameManager : MonoBehaviour
         {
             TriggerGameOver();
         }
+    }
+    
+    /// <summary>
+    /// Decreases lives by 1 from monster contact and pauses immediately, or triggers game over at 0 lives.
+    /// </summary>
+    public void LoseLifeFromMonster()
+    {
+        if (isGameOver || isDamagePaused || isLevelComplete)
+            return;
+        
+        isDamagePaused = true;
+        SetLives(currentLives - 1);
+        
+        if (currentLives <= 0)
+        {
+            TriggerGameOver();
+            return;
+        }
+        
+        Time.timeScale = 0f;
+        OnMonsterDamagePause?.Invoke();
+    }
+    
+    void ResumeAfterMonsterDamage()
+    {
+        isDamagePaused = false;
+        Time.timeScale = 1f;
+        OnMonsterDamageResume?.Invoke();
     }
     
     /// <summary>
@@ -324,6 +373,7 @@ public class GameManager : MonoBehaviour
         isLevelComplete = false;
         isHoleFallSequence = false;
         isAwaitingHoleRetryKey = false;
+        isDamagePaused = false;
         pendingHoleRetryLoader = null;
         monsterSpeedMultiplier = 1f;
         Time.timeScale = 1f;

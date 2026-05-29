@@ -41,13 +41,13 @@ public class HoleTrigger : MonoBehaviour
         if (GameManager.Instance != null && GameManager.Instance.IsGameOver())
             return;
 
+        if (GameManager.Instance != null && GameManager.Instance.IsDamagePaused())
+            return;
+
         PlayerCollisionHandler handler = other.GetComponentInParent<PlayerCollisionHandler>();
         if (handler == null)
             handler = other.GetComponent<PlayerCollisionHandler>();
         if (handler == null)
-            return;
-
-        if (handler.IsInvincible())
             return;
 
         Rigidbody playerRb = handler.GetComponent<Rigidbody>();

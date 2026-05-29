@@ -7,27 +7,8 @@ using UnityEngine;
 public class PlayerCollisionHandler : MonoBehaviour
 {
     [Header("Collision Settings")]
-    [Tooltip("Invincibility duration after taking damage (in seconds)")]
-    public float invincibilityDuration = 1f;
-    
     [Tooltip("Tag to identify monsters (optional, will check name if not set)")]
     public string monsterTag = "Monster";
-    
-    private bool isInvincible = false;
-    private float invincibilityTimer = 0f;
-    
-    void Update()
-    {
-        // Update invincibility timer
-        if (isInvincible)
-        {
-            invincibilityTimer -= Time.deltaTime;
-            if (invincibilityTimer <= 0f)
-            {
-                isInvincible = false;
-            }
-        }
-    }
     
     void OnCollisionEnter(Collision collision)
     {
@@ -50,18 +31,17 @@ public class PlayerCollisionHandler : MonoBehaviour
             return;
         }
         
-        // Check if it's a weapon (by name on self or any parent) — weapon pickup is not affected by invincibility
+        if (GameManager.Instance != null && GameManager.Instance.IsDamagePaused())
+        {
+            return;
+        }
+        
+        // Check if it's a weapon (by name on self or any parent)
         GameObject weaponRoot = FindWeaponRoot(other);
         
         if (weaponRoot != null)
         {
             HandleWeaponPickup(weaponRoot);
-            return;
-        }
-        
-        // Skip if invincible
-        if (isInvincible)
-        {
             return;
         }
         
@@ -139,11 +119,7 @@ public class PlayerCollisionHandler : MonoBehaviour
     {
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.LoseLife();
-            
-            // Start invincibility period
-            isInvincible = true;
-            invincibilityTimer = invincibilityDuration;
+            GameManager.Instance.LoseLifeFromMonster();
             
             Debug.Log($"Player took damage! Lives remaining: {GameManager.Instance.GetLives()}");
         }
@@ -151,22 +127,5 @@ public class PlayerCollisionHandler : MonoBehaviour
         {
             Debug.LogWarning("PlayerCollisionHandler: GameManager instance not found!");
         }
-    }
-    
-    /// <summary>
-    /// Checks if the player is currently invincible.
-    /// </summary>
-    public bool IsInvincible()
-    {
-        return isInvincible;
-    }
-
-    /// <summary>
-    /// Starts invincibility after falling in a hole (life already deducted by HoleTrigger).
-    /// </summary>
-    public void BeginInvincibilityAfterHole()
-    {
-        isInvincible = true;
-        invincibilityTimer = invincibilityDuration;
     }
 }

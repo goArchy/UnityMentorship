@@ -141,7 +141,6 @@ public class SampleSceneGameOverSetup : EditorWindow
                 
                 // Add PlayerCollisionHandler
                 collisionHandler = player.AddComponent<PlayerCollisionHandler>();
-                collisionHandler.invincibilityDuration = 1f;
                 collisionHandler.monsterTag = "Monster";
                 Debug.Log("Added PlayerCollisionHandler to Player.");
             }

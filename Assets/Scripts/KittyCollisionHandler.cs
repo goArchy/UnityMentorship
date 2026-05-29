@@ -24,11 +24,10 @@ public class KittyCollisionHandler : MonoBehaviour
         if (GameManager.Instance != null && GameManager.Instance.IsGameOver())
             return;
 
-        if (Time.time - lastPenaltyTime < damageCooldown)
+        if (GameManager.Instance != null && GameManager.Instance.IsDamagePaused())
             return;
 
-        PlayerCollisionHandler playerHandler = FindObjectOfType<PlayerCollisionHandler>();
-        if (playerHandler != null && playerHandler.IsInvincible())
+        if (Time.time - lastPenaltyTime < damageCooldown)
             return;
 
         Collider[] nearby = Physics.OverlapSphere(transform.position, detectionRadius);
@@ -41,7 +40,7 @@ public class KittyCollisionHandler : MonoBehaviour
             {
                 if (GameManager.Instance != null)
                 {
-                    GameManager.Instance.LoseLife();
+                    GameManager.Instance.LoseLifeFromMonster();
                     lastPenaltyTime = Time.time;
                     Debug.Log("Monster is near the kitty! Player lost a life.");
                 }
