@@ -119,7 +119,7 @@ public class PlayerCollisionHandler : MonoBehaviour
     {
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.LoseLifeFromMonster();
+            GameManager.Instance.LoseLifeFromMonster(LifeLostReason.PlayerHit);
             
             Debug.Log($"Player took damage! Lives remaining: {GameManager.Instance.GetLives()}");
         }

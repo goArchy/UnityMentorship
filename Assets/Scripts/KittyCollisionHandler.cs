@@ -40,7 +40,7 @@ public class KittyCollisionHandler : MonoBehaviour
             {
                 if (GameManager.Instance != null)
                 {
-                    GameManager.Instance.LoseLifeFromMonster();
+                    GameManager.Instance.LoseLifeFromMonster(LifeLostReason.KittyHit);
                     lastPenaltyTime = Time.time;
                     Debug.Log("Monster is near the kitty! Player lost a life.");
                 }

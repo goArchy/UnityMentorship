@@ -32,18 +32,17 @@ public class HUDController : MonoBehaviour
     [Tooltip("Message shown when the level is completed")]
     public string levelCompleteMessage = "Level Complete!\nPress any key to continue...";
     
-    [Tooltip("Message shown after falling in a hole when lives remain")]
-    public string holeFallRetryMessage = "You fell!\nPress any key to retry...";
-    
     [Tooltip("Message shown when the player runs out of lives")]
     public string gameOverMessage = "Game Over!";
     
     void Start()
     {
-        // GameOverUI may be on an inactive panel; ensure it subscribes to OnGameOver
+        // GameOverUI / LifeLostUI may be on inactive panels; ensure they subscribe
         GameOverUI gameOverUI = FindObjectOfType<GameOverUI>(true);
         if (gameOverUI != null)
             gameOverUI.Initialize();
+        
+        EnsureLifeLostUI();
         
         // Subscribe to GameManager events
         if (GameManager.Instance != null)
@@ -53,8 +52,6 @@ public class HUDController : MonoBehaviour
             GameManager.Instance.OnWeaponChanged += UpdateWeaponDisplay;
             GameManager.Instance.OnLevelComplete += ShowLevelComplete;
             GameManager.Instance.OnProceedToNextLevel += HideLevelComplete;
-            GameManager.Instance.OnHoleFallPause += ShowHoleFallPause;
-            GameManager.Instance.OnHoleFallRetry += HideHoleFallPause;
             GameManager.Instance.OnGameOver += ShowGameOver;
             
             // Initialize display with current values
@@ -78,8 +75,6 @@ public class HUDController : MonoBehaviour
             GameManager.Instance.OnWeaponChanged -= UpdateWeaponDisplay;
             GameManager.Instance.OnLevelComplete -= ShowLevelComplete;
             GameManager.Instance.OnProceedToNextLevel -= HideLevelComplete;
-            GameManager.Instance.OnHoleFallPause -= ShowHoleFallPause;
-            GameManager.Instance.OnHoleFallRetry -= HideHoleFallPause;
             GameManager.Instance.OnGameOver -= ShowGameOver;
         }
     }
@@ -143,21 +138,32 @@ public class HUDController : MonoBehaviour
         }
     }
     
-    private void ShowHoleFallPause()
-    {
-        if (statusText != null)
-            statusText.text = holeFallRetryMessage;
-    }
-    
-    private void HideHoleFallPause()
-    {
-        if (statusText != null && GameManager.Instance != null)
-            UpdateWeaponDisplay(GameManager.Instance.HasWeapon());
-    }
-    
     private void ShowGameOver()
     {
         if (statusText != null)
             statusText.text = gameOverMessage;
+    }
+    
+    private void EnsureLifeLostUI()
+    {
+        LifeLostUI lifeLostUI = FindObjectOfType<LifeLostUI>(true);
+        if (lifeLostUI == null)
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null)
+                canvas = FindObjectOfType<Canvas>();
+            
+            if (canvas == null)
+            {
+                Debug.LogWarning("HUDController: No Canvas found; cannot create LifeLostUI.");
+                return;
+            }
+            
+            GameObject host = new GameObject("LifeLostUI");
+            host.transform.SetParent(canvas.transform, false);
+            lifeLostUI = host.AddComponent<LifeLostUI>();
+        }
+        
+        lifeLostUI.Initialize();
     }
 }

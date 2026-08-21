@@ -195,7 +195,7 @@ public class RandomSphereMovement : MonoBehaviour
     }
     
     /// <summary>
-    /// Walls and kitties block after contact (bounce). Kitties are NOT included in SphereCast so monsters can reach them and trigger kitty penalties.
+    /// Walls, kitties, and weapons block after contact (bounce). Kitties are NOT included in SphereCast so monsters can reach them and trigger kitty penalties.
     /// </summary>
     bool IsObstacleCollisionResponse(GameObject go)
     {
@@ -204,7 +204,37 @@ public class RandomSphereMovement : MonoBehaviour
             return false;
         }
         
-        return go.name.Contains("Wall") || go.name.Contains("Kitty") || go.CompareTag("Wall");
+        return go.name.Contains("Wall") || go.name.Contains("Kitty") || go.CompareTag("Wall") || IsWeapon(go);
+    }
+    
+    /// <summary>
+    /// Walls and weapons block the sphere ahead of contact via SphereCast (prevents tunneling/passing through).
+    /// </summary>
+    bool IsSphereCastBlocker(GameObject go)
+    {
+        if (go == null)
+        {
+            return false;
+        }
+        
+        return go.name.Contains("Wall") || go.CompareTag("Wall") || IsWeapon(go);
+    }
+    
+    /// <summary>
+    /// The weapon's solid colliders live on child objects (e.g. "Cylinder"), while the "Weapon"
+    /// name is on the root, so we walk up the hierarchy to detect any part of the weapon.
+    /// </summary>
+    static bool IsWeapon(GameObject go)
+    {
+        Transform t = go != null ? go.transform : null;
+        while (t != null)
+        {
+            if (t.name.Contains("Weapon"))
+                return true;
+            t = t.parent;
+        }
+        
+        return false;
     }
     
     bool IsNearHole(Vector3 position)
@@ -242,8 +272,8 @@ public class RandomSphereMovement : MonoBehaviour
         
         if (Physics.SphereCast(castOrigin, radius, direction, out hit, castDistance))
         {
-            // Check if we hit a wall
-            if (hit.collider.gameObject.name.Contains("Wall") || hit.collider.CompareTag("Wall"))
+            // Check if we hit a wall or weapon
+            if (IsSphereCastBlocker(hit.collider.gameObject))
             {
                 // Adjust distance for the offset origin
                 float adjustedDistance = hit.distance - radius * 0.1f;
@@ -276,7 +306,7 @@ public class RandomSphereMovement : MonoBehaviour
         {
             if (Physics.SphereCast(castOrigin, radius, checkDir, out hit, castDistance))
             {
-                if (hit.collider.gameObject.name.Contains("Wall") || hit.collider.CompareTag("Wall"))
+                if (IsSphereCastBlocker(hit.collider.gameObject))
                 {
                     float adjustedDistance = hit.distance - radius * 0.1f;
                     float safeDistance = Mathf.Max(0f, adjustedDistance - 0.01f);

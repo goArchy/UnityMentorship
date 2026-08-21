@@ -35,7 +35,9 @@ public class GameManager : MonoBehaviour
     private bool isDamagePaused = false;
     private float monsterSpeedMultiplier = 1f;
     private Coroutine holeFallCoroutine;
+    private Coroutine loadLandingSceneCoroutine;
     private LevelLoader pendingHoleRetryLoader;
+    private bool isLoadingLandingScene = false;
     
     // Events for HUD updates
     public System.Action<int> OnLivesChanged;
@@ -46,8 +48,10 @@ public class GameManager : MonoBehaviour
     public System.Action OnProceedToNextLevel;
     public System.Action OnHoleFallPause;
     public System.Action OnHoleFallRetry;
-    public System.Action OnMonsterDamagePause;
+    public System.Action<LifeLostReason> OnMonsterDamagePause;
     public System.Action OnMonsterDamageResume;
+    public System.Action<LifeLostReason> OnLifeLostPause;
+    public System.Action OnLifeLostResume;
     
     void Awake()
     {
@@ -155,6 +159,7 @@ public class GameManager : MonoBehaviour
         }
         
         Time.timeScale = 0f;
+        OnLifeLostPause?.Invoke(LifeLostReason.HoleFall);
         OnHoleFallPause?.Invoke();
         isAwaitingHoleRetryKey = true;
         holeFallCoroutine = null;
@@ -165,6 +170,7 @@ public class GameManager : MonoBehaviour
         isAwaitingHoleRetryKey = false;
         isDamagePaused = false;
         Time.timeScale = 1f;
+        OnLifeLostResume?.Invoke();
         OnHoleFallRetry?.Invoke();
         
         if (pendingHoleRetryLoader != null)
@@ -213,7 +219,7 @@ public class GameManager : MonoBehaviour
     /// <summary>
     /// Decreases lives by 1 from monster contact and pauses immediately, or triggers game over at 0 lives.
     /// </summary>
-    public void LoseLifeFromMonster()
+    public void LoseLifeFromMonster(LifeLostReason reason = LifeLostReason.PlayerHit)
     {
         if (isGameOver || isDamagePaused || isLevelComplete)
             return;
@@ -228,13 +234,15 @@ public class GameManager : MonoBehaviour
         }
         
         Time.timeScale = 0f;
-        OnMonsterDamagePause?.Invoke();
+        OnLifeLostPause?.Invoke(reason);
+        OnMonsterDamagePause?.Invoke(reason);
     }
     
     void ResumeAfterMonsterDamage()
     {
         isDamagePaused = false;
         Time.timeScale = 1f;
+        OnLifeLostResume?.Invoke();
         OnMonsterDamageResume?.Invoke();
     }
     
@@ -359,12 +367,31 @@ public class GameManager : MonoBehaviour
             monsterSpeedMultiplier *= 1.5f;
             SetLevel(0);
         }
+
+        TryGrantMilestoneLife();
+    }
+
+    /// <summary>
+    /// Grants a life when entering a level divisible by 5, if below starting lives.
+    /// </summary>
+    void TryGrantMilestoneLife()
+    {
+        int levelNumber = GetCurrentLevelNumber();
+        if (levelNumber % 5 == 0 && currentLives < startingLives)
+            GainLife();
     }
     
     /// <summary>
     /// Resets the game state.
     /// </summary>
     public void ResetGame()
+    {
+        CancelPendingLandingSceneLoad();
+        isLoadingLandingScene = false;
+        ApplyResetState();
+    }
+    
+    void ApplyResetState()
     {
         currentLives = startingLives;
         currentLevel = 0;
@@ -406,26 +433,59 @@ public class GameManager : MonoBehaviour
         // Notify listeners (e.g., UI) — only when lives reach zero
         OnGameOver?.Invoke();
         
-        // Load landing scene after delay
-        Invoke(nameof(LoadLandingScene), gameOverDelay);
+        // Use realtime delay so the load still fires while timeScale is 0
+        CancelPendingLandingSceneLoad();
+        loadLandingSceneCoroutine = StartCoroutine(LoadLandingSceneAfterDelay());
     }
     
     /// <summary>
-    /// Loads the landing scene.
+    /// Returns to the landing scene immediately (e.g. from the game over button).
+    /// Cancels any delayed auto-return so LandingScene is not loaded twice.
+    /// </summary>
+    public void ReturnToLandingScene()
+    {
+        LoadLandingScene();
+    }
+    
+    IEnumerator LoadLandingSceneAfterDelay()
+    {
+        yield return new WaitForSecondsRealtime(gameOverDelay);
+        loadLandingSceneCoroutine = null;
+        LoadLandingScene();
+    }
+    
+    void CancelPendingLandingSceneLoad()
+    {
+        // Legacy Invoke path (scaled time) — cancel if anything still schedules it
+        CancelInvoke(nameof(LoadLandingScene));
+        
+        if (loadLandingSceneCoroutine != null)
+        {
+            StopCoroutine(loadLandingSceneCoroutine);
+            loadLandingSceneCoroutine = null;
+        }
+    }
+    
+    /// <summary>
+    /// Loads the landing scene once. Safe to call from the delayed auto-return or the UI button.
     /// </summary>
     private void LoadLandingScene()
     {
+        if (isLoadingLandingScene)
+            return;
+        
         if (string.IsNullOrEmpty(landingSceneName))
         {
             Debug.LogError("Landing scene name is not set!");
             return;
         }
         
-        // Reset game state before loading
-        ResetGame();
+        isLoadingLandingScene = true;
+        CancelPendingLandingSceneLoad();
+        ApplyResetState();
         
-        // Load the scene
         SceneManager.LoadScene(landingSceneName);
+        isLoadingLandingScene = false;
     }
     
     /// <summary>

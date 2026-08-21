@@ -1055,9 +1055,6 @@ MonoBehaviour:
   levelCompleteMessage: 'Level Complete!
 
     Press any key to continue...'
-  holeFallRetryMessage: 'You fell!
-
-    Press any key to retry...'
   gameOverMessage: Game Over!
 --- !u!1 &963194225
 GameObject:
@@ -1920,7 +1917,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 224d98bb65a25449f97b760edc776aa3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  levelIndex: 5
+  levelIndex: 8
   cellSize: 1
   useCubes: 1
   wallScale: {x: 1, y: 1, z: 1}

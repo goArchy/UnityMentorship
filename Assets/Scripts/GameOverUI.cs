@@ -99,9 +99,7 @@ public class GameOverUI : MonoBehaviour
     {
         if (GameManager.Instance != null)
         {
-            string sceneName = GameManager.Instance.GetLandingSceneName();
-            GameManager.Instance.ResetGame();
-            UnityEngine.SceneManagement.SceneManager.LoadScene(sceneName);
+            GameManager.Instance.ReturnToLandingScene();
         }
         else
         {
