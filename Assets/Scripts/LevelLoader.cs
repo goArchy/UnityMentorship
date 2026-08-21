@@ -12,13 +12,16 @@ public class LevelLoader : MonoBehaviour
     public float cellSize = 1f;
     
     [Header("Wall Settings")]
-    [Tooltip("Use cubes for walls (true) or spheres (false)")]
+    [Tooltip("Dungeon wall prefab. When set, used instead of primitives.")]
+    public GameObject wallPrefab;
+    
+    [Tooltip("Use cubes for walls (true) or spheres (false). Only used when wallPrefab is unset.")]
     public bool useCubes = true;
     
-    [Tooltip("Scale of wall objects")]
+    [Tooltip("Scale of wall objects (multiplies prefab fit-to-cell scale, or sets primitive scale)")]
     public Vector3 wallScale = Vector3.one;
     
-    [Tooltip("Material for walls (optional)")]
+    [Tooltip("Material for primitive walls (optional)")]
     public Material wallMaterial;
     
     [Tooltip("Parent object for all walls (optional)")]
@@ -90,7 +93,10 @@ public class LevelLoader : MonoBehaviour
     public Transform kittiesParent;
     
     [Header("Ground Settings")]
-    [Tooltip("Material for the procedurally generated ground mesh")]
+    [Tooltip("Dungeon floor prefab. When set, one tile is placed per cell (holes omitted).")]
+    public GameObject floorPrefab;
+    
+    [Tooltip("Material for the procedurally generated ground mesh (fallback when floorPrefab is unset)")]
     public Material groundMaterial;
     
     [Tooltip("Parent object for the ground mesh (optional)")]
@@ -190,7 +196,7 @@ public class LevelLoader : MonoBehaviour
                 {
                     Vector3 position = new Vector3(
                         offsetX + col * cellSize,
-                        wallScale.y / 2f, // Position at half height so bottom sits on ground
+                        0f,
                         offsetZ - row * cellSize
                     );
                     
@@ -285,31 +291,52 @@ public class LevelLoader : MonoBehaviour
     
     void CreateWall(Vector3 position)
     {
-        // Create primitive (cube or sphere)
-        PrimitiveType primitiveType = useCubes ? PrimitiveType.Cube : PrimitiveType.Sphere;
-        GameObject wall = GameObject.CreatePrimitive(primitiveType);
+        GameObject wall;
         
-        // Set position and scale
-        wall.transform.position = position;
-        wall.transform.localScale = wallScale;
-        
-        // Set name
-        wall.name = $"Wall_{wallObjects.Count}";
-        
-        // Apply material if provided
-        if (wallMaterial != null)
+        if (wallPrefab != null)
         {
-            Renderer renderer = wall.GetComponent<Renderer>();
-            if (renderer != null)
+            wall = Instantiate(wallPrefab);
+            Bounds localBounds = GetLocalMeshBounds(wall);
+            float sx = cellSize / Mathf.Max(localBounds.size.x, 0.0001f);
+            float sz = cellSize / Mathf.Max(localBounds.size.z, 0.0001f);
+            // Keep wall height proportional to width fit so ~1.5m tall at cellSize 1 with native 2x3 mesh.
+            float sy = sx;
+            wall.transform.localScale = new Vector3(
+                sx * wallScale.x,
+                sy * wallScale.y,
+                sz * wallScale.z
+            );
+            wall.transform.position = new Vector3(position.x, 0f, position.z);
+            SnapBottomToGround(wall);
+            EnsureNonTriggerCollider(wall, localBounds);
+        }
+        else
+        {
+            PrimitiveType primitiveType = useCubes ? PrimitiveType.Cube : PrimitiveType.Sphere;
+            wall = GameObject.CreatePrimitive(primitiveType);
+            wall.transform.position = new Vector3(position.x, wallScale.y / 2f, position.z);
+            wall.transform.localScale = wallScale;
+            
+            if (wallMaterial != null)
             {
-                renderer.material = wallMaterial;
+                Renderer renderer = wall.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.material = wallMaterial;
+                }
+            }
+            
+            Collider collider = wall.GetComponent<Collider>();
+            if (collider != null)
+            {
+                collider.isTrigger = false;
             }
         }
         
-        // Add to parent if specified, otherwise create a default parent
+        wall.name = $"Wall_{wallObjects.Count}";
+        
         if (wallsParent == null)
         {
-            // Create a parent if it doesn't exist
             Transform existingParent = transform.Find("Walls");
             if (existingParent == null)
             {
@@ -323,13 +350,6 @@ public class LevelLoader : MonoBehaviour
             }
         }
         wall.transform.SetParent(wallsParent);
-        
-        // Ensure the wall has a collider (CreatePrimitive already adds one, but make sure it's not a trigger)
-        Collider collider = wall.GetComponent<Collider>();
-        if (collider != null)
-        {
-            collider.isTrigger = false;
-        }
         
         wallObjects.Add(wall);
     }
@@ -797,17 +817,6 @@ public class LevelLoader : MonoBehaviour
     {
         ClearGround();
         
-        Mesh mesh = GroundMeshBuilder.Build(
-            levelData,
-            cellSize,
-            offsetX,
-            offsetZ,
-            groundMargin,
-            0f
-        );
-        
-        groundInstance = new GameObject("GroundMesh");
-        
         if (groundParent == null)
         {
             Transform existingParent = transform.Find("Ground");
@@ -822,6 +831,23 @@ public class LevelLoader : MonoBehaviour
                 groundParent = existingParent;
             }
         }
+        
+        if (floorPrefab != null)
+        {
+            BuildGroundFromPrefabs(levelData, offsetX, offsetZ);
+            return;
+        }
+        
+        Mesh mesh = GroundMeshBuilder.Build(
+            levelData,
+            cellSize,
+            offsetX,
+            offsetZ,
+            groundMargin,
+            0f
+        );
+        
+        groundInstance = new GameObject("GroundMesh");
         groundInstance.transform.SetParent(groundParent);
         groundInstance.transform.localPosition = Vector3.zero;
         
@@ -837,6 +863,91 @@ public class LevelLoader : MonoBehaviour
         MeshCollider meshCollider = groundInstance.AddComponent<MeshCollider>();
         meshCollider.sharedMesh = mesh;
         meshCollider.convex = false;
+    }
+    
+    void BuildGroundFromPrefabs(string[] levelData, float offsetX, float offsetZ)
+    {
+        int rows = levelData.Length;
+        int cols = levelData[0].Length;
+        int marginCells = Mathf.Max(1, Mathf.CeilToInt(groundMargin / cellSize));
+        
+        groundInstance = new GameObject("GroundTiles");
+        groundInstance.transform.SetParent(groundParent);
+        groundInstance.transform.localPosition = Vector3.zero;
+        
+        Bounds localBounds = GetLocalMeshBounds(floorPrefab);
+        float sx = cellSize / Mathf.Max(localBounds.size.x, 0.0001f);
+        float sz = cellSize / Mathf.Max(localBounds.size.z, 0.0001f);
+        float sy = sx;
+        Vector3 tileScale = new Vector3(sx, sy, sz);
+        
+        for (int row = -marginCells; row <= rows - 1 + marginCells; row++)
+        {
+            for (int col = -marginCells; col <= cols - 1 + marginCells; col++)
+            {
+                if (GroundMeshBuilder.IsHoleCell(levelData, rows, cols, row, col))
+                    continue;
+                
+                GameObject floor = Instantiate(floorPrefab);
+                floor.name = $"Floor_{row}_{col}";
+                floor.transform.SetParent(groundInstance.transform);
+                floor.transform.localScale = tileScale;
+                floor.transform.position = new Vector3(
+                    offsetX + col * cellSize,
+                    0f,
+                    offsetZ - row * cellSize
+                );
+                SnapBottomToGround(floor);
+                EnsureNonTriggerCollider(floor, localBounds);
+            }
+        }
+    }
+    
+    static Bounds GetLocalMeshBounds(GameObject source)
+    {
+        MeshFilter meshFilter = source.GetComponentInChildren<MeshFilter>();
+        if (meshFilter != null && meshFilter.sharedMesh != null)
+        {
+            return meshFilter.sharedMesh.bounds;
+        }
+        
+        Renderer renderer = source.GetComponentInChildren<Renderer>();
+        if (renderer != null)
+        {
+            return renderer.localBounds;
+        }
+        
+        return new Bounds(Vector3.zero, Vector3.one);
+    }
+    
+    static void SnapBottomToGround(GameObject go)
+    {
+        Renderer renderer = go.GetComponentInChildren<Renderer>();
+        if (renderer == null || !renderer.enabled)
+        {
+            return;
+        }
+        
+        float dy = -renderer.bounds.min.y;
+        go.transform.position += new Vector3(0f, dy, 0f);
+    }
+    
+    static void EnsureNonTriggerCollider(GameObject go, Bounds localMeshBounds)
+    {
+        Collider[] existing = go.GetComponentsInChildren<Collider>();
+        if (existing.Length > 0)
+        {
+            foreach (Collider col in existing)
+            {
+                col.isTrigger = false;
+            }
+            return;
+        }
+        
+        BoxCollider box = go.AddComponent<BoxCollider>();
+        box.center = localMeshBounds.center;
+        box.size = localMeshBounds.size;
+        box.isTrigger = false;
     }
     
     void ClearGround()
